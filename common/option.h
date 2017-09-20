@@ -50,7 +50,7 @@ std::string str_fmt(const char * fmt, ...)
 {
     va_list ap;
     va_start(ap, fmt);
-    int len = vsnprintf(nullptr, 0, fmt, ap) + 1;
+    size_t len = static_cast<size_t>(vsnprintf(nullptr, 0, fmt, ap) + 1);
 
     std::unique_ptr<char[]> buf(new char[len]);
     va_start(ap, fmt);
@@ -65,7 +65,8 @@ T lexical_cast(const std::string & value)
     std::stringstream ss;
     T tmp;
     if (! (ss << value && ss >> tmp && ss.eof())) {
-        throw option_exception(str_fmt("bad cast, can not cast %s to type %s", value.c_str(), type_name<T>().c_str()));
+        throw option_exception(str_fmt("bad cast, can not cast %s to type %s",
+                                       value.c_str(), type_name<T>().c_str()));
     }
 
     return tmp;
@@ -74,7 +75,7 @@ T lexical_cast(const std::string & value)
 template <class T>
 struct Restrict
 {
-    virtual void Check(const std::string & name, const T &) const {}
+    virtual void Check(const std::string & name, const T &) const { (void)name; }
 };
 
 template <class T>
@@ -85,7 +86,8 @@ public:
     virtual void Check(const std::string & name, const T & value) const override
     {
         if (value < _min || value > _max) {
-            throw option_exception(str_fmt("%s must be in range %d ~ %d", name.c_str(), _min, _max));
+            throw option_exception(str_fmt("%s must be in range %d ~ %d",
+                                           name.c_str(), _min, _max));
         }
     }
 
@@ -97,7 +99,10 @@ private:
 template <class T>
 class OneOfRestrict : public Restrict<T> {
 public:
-    OneOfRestrict(const std::set<T> & possible_values) : _possible_values(possible_values) {}
+    OneOfRestrict(const std::set<T> & possible_values)
+        : _possible_values(possible_values)
+    {
+    }
 
     virtual void Check(const std::string & name, const T & value) const override
     {
@@ -125,9 +130,9 @@ struct OptionBase {
         : long_name(long_name)
         , short_name(short_name)
         , desc(desc)
-        , is_set(false)
+        , is_bool_option(is_bool_option)
         , is_necessary(is_necessary)
-        , is_bool_option(is_bool_option) {}
+        , is_set(false) {}
     virtual ~OptionBase() {}
 
     virtual void check() = 0;
@@ -145,7 +150,8 @@ struct OptionBase {
 template <class T>
 struct Option : public OptionBase {
 public:
-    Option(std::string long_name, char short_name, std::string desc, bool is_necessary,
+    Option(std::string long_name, char short_name,
+           std::string desc, bool is_necessary,
            bool is_bool_option, const T & default_value)
         : OptionBase(long_name, short_name, desc, is_necessary, is_bool_option)
         , default_value(default_value) {}
@@ -175,7 +181,8 @@ public:
     virtual void check()
     {
         if (this->is_necessary && !is_set) {
-            throw option_exception(str_fmt("option '%s' must be set", long_name.c_str()));
+            throw option_exception(str_fmt("option '%s' must be set",
+                                           long_name.c_str()));
         }
     }
 
@@ -185,16 +192,23 @@ public:
 
 template <class T, class R>
 struct OptionWithRestirct : public Option<T> {
-    OptionWithRestirct(std::string long_name, char short_name, std::string desc, bool is_necessary,
-                       bool is_bool_option, const T & default_value, const R & restriction)
+    OptionWithRestirct(std::string long_name, char short_name, std::string desc,
+                       bool is_necessary, bool is_bool_option,
+                       const T & default_value, const R & restriction)
         : Option<T>(long_name, short_name, desc, is_necessary, is_bool_option, default_value)
-        , restriction(restriction) {}
-    virtual ~OptionWithRestirct() {}
+        , restriction(restriction)
+    {
+    }
+
+    virtual ~OptionWithRestirct()
+    {
+    }
 
     virtual void check()
     {
         if (this->is_necessary && !this->is_set) {
-            throw option_exception(str_fmt("option '%s' must be set", this->long_name.c_str()));
+            throw option_exception(str_fmt("option '%s' must be set",
+                                           this->long_name.c_str()));
         }
 
         restriction.Check(this->long_name, this->is_set ? this->value : this->default_value);
@@ -287,25 +301,25 @@ public:
                             return false;
                         }
 
-                        if (it->second.get()->is_bool_option) {
+                        if (it->second->is_bool_option) {
                             if (value != "") {
                                 fprintf(stderr, "bool option '--%s' can not be with value\n", lname.c_str());
                                 return false;
                             }
-                            it->second.get()->set(true);
+                            it->second->set(true);
                         } else {
                             if (value == "") {
                                 fprintf(stderr, "option '--%s' must be with value\n", lname.c_str());
                                 return false;
                             }
 
-                            it->second.get()->set(value);
+                            it->second->set(value);
                         }
 
                     // 处理短选项
                     } else {
-                        int len = arg.length();
-                        for (int k=1; k<len; ++k) {
+                        size_t len = arg.length();
+                        for (size_t k=1; k<len; ++k) {
                             char short_name = arg[k];
 
                             if (kHelpOptionShortName == arg[k]) {
@@ -325,8 +339,8 @@ public:
                                 return false;
                             }
 
-                            if (it->second.get()->is_bool_option) {
-                                it->second.get()->set(true);
+                            if (it->second->is_bool_option) {
+                                it->second->set(true);
 
                             } else {
                                 if (i+1 >= argc || k+1 != len) {
@@ -337,7 +351,7 @@ public:
                                 ++i;
                                 value = argv[i];
 
-                                it->second.get()->set(value);
+                                it->second->set(value);
                             }
                         }
                     }
@@ -347,7 +361,7 @@ public:
             }
 
             for (const auto & it : _options) {
-                it.second.get()->check();
+                it.second->check();
             }
 
         } catch (const std::exception & e) {
@@ -395,12 +409,15 @@ public:
         for (const auto & it : _options) {
             const auto & t = *it.second.get();
             if (t.short_name == '\0') {
-                fprintf(stderr, "          --%-20s   %s\n", t.long_name.c_str(), t.desc.c_str());
+                fprintf(stderr, "          --%-20s   %s\n",
+                        t.long_name.c_str(), t.desc.c_str());
             } else {
-                fprintf(stderr, "    -%-2c   --%-20s   %s\n", t.short_name, t.long_name.c_str(), t.desc.c_str());
+                fprintf(stderr, "    -%-2c   --%-20s   %s\n", t.short_name,
+                        t.long_name.c_str(), t.desc.c_str());
             }
         }
-        fprintf(stderr, "    -%-2c   --%-20s   %s\n", kHelpOptionShortName, kHelpOptionLongName.c_str(), kHelpMessage.c_str());
+        fprintf(stderr, "    -%-2c   --%-20s   %s\n", kHelpOptionShortName,
+                kHelpOptionLongName.c_str(), kHelpMessage.c_str());
     }
 
 private:
@@ -411,11 +428,13 @@ private:
         }
 
         if(_options.find(long_name) != _options.end()) {
-            throw option_exception(str_fmt("multipule defined option '%s'", long_name.c_str()));
+            throw option_exception(str_fmt("multipule defined option '%s'",
+                                   long_name.c_str()));
         }
 
         if (short_name != '\0' && _name_map.find(short_name) != _name_map.end()) {
-            throw option_exception(str_fmt("multipule defined option '%c'", short_name));
+            throw option_exception(str_fmt("multipule defined option '%c'",
+                                   short_name));
         }
     }
 

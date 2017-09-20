@@ -1,0 +1,8 @@
+{
+    "acceptor":{
+        "listen":[
+            { "ip":"localhost", "port":111 },
+            { "ip":"localhost", "port":222 }
+        ]
+    }
+}
